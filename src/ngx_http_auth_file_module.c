@@ -2,7 +2,7 @@
 * @Author: detailyang
 * @Date:   2016-09-05 11:10:38
 * @Last Modified by:   detailyang
-* @Last Modified time: 2016-09-07 12:16:02
+* @Last Modified time: 2016-09-07 12:17:11
 */
 
 
@@ -15,12 +15,15 @@
 #include <ngx_http.h>
 #include <nginx.h>
 
+
 #define NGX_AUTH_FILE_BUFFER_SIZE 4096
+
 
 typedef struct { 
     ngx_open_file_t *file;
     ngx_array_t     *passwords;
 } ngx_http_auth_file_loc_conf_t;
+
 
 static char *
 ngx_http_auth_file(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -37,8 +40,8 @@ ngx_http_auth_file_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 static ngx_array_t *
 ngx_http_auth_file_read(ngx_http_auth_file_loc_conf_t *aflcf, ngx_log_t *log);
 
-static ngx_command_t  ngx_http_auth_file_module_commands[] = {
 
+static ngx_command_t  ngx_http_auth_file_module_commands[] = {
     { ngx_string("auth_file"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
       ngx_http_auth_file,
@@ -79,7 +82,9 @@ ngx_module_t ngx_http_auth_file_module = {
     NGX_MODULE_V1_PADDING
 };
 
+
 static ngx_int_t reopen = 0;
+
 
 static char *
 ngx_http_auth_file(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
@@ -104,6 +109,7 @@ ngx_http_auth_file(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
     return NGX_CONF_OK;
 }
 
+
 static void *
 ngx_http_auth_file_create_loc_conf(ngx_conf_t *cf) {
     ngx_http_auth_file_loc_conf_t    *conf;
@@ -122,6 +128,7 @@ ngx_http_auth_file_create_loc_conf(ngx_conf_t *cf) {
     return conf;
 }
 
+
 static char *
 ngx_http_auth_file_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 {
@@ -138,6 +145,7 @@ ngx_http_auth_file_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     return NGX_CONF_OK;
 }
 
+
 static ngx_int_t
 ngx_http_auth_file_post_conf(ngx_conf_t *cf) {
     ngx_http_handler_pt        *h;
@@ -152,6 +160,7 @@ ngx_http_auth_file_post_conf(ngx_conf_t *cf) {
     
     return NGX_OK;
 }
+
 
 static ngx_array_t *
 ngx_http_auth_file_read(ngx_http_auth_file_loc_conf_t *aflcf, ngx_log_t *log) {
@@ -258,6 +267,7 @@ cleanup:
     return passwords;
 }
 
+
 static ngx_int_t
 ngx_http_auth_file_handler(ngx_http_request_t *r) {
     ngx_str_t                       *pwds;
@@ -292,6 +302,7 @@ ngx_http_auth_file_handler(ngx_http_request_t *r) {
     
     return NGX_HTTP_UNAUTHORIZED;
 }
+
 
 static void
 ngx_http_auth_file_flush(ngx_open_file_t *file, ngx_log_t *log) {
