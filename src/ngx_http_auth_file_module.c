@@ -2,12 +2,12 @@
 * @Author: detailyang
 * @Date:   2016-09-05 11:10:38
 * @Last Modified by:   detailyang
-* @Last Modified time: 2016-09-06 23:45:25
+* @Last Modified time: 2016-09-07 12:16:02
 */
 
 
 #ifndef DDEBUG
-#define DDEBUG 1
+#define DDEBUG 0
 #endif
 #include "ddebug.h"
 
@@ -19,6 +19,7 @@
 
 typedef struct { 
     ngx_open_file_t *file;
+    ngx_array_t     *passwords;
 } ngx_http_auth_file_loc_conf_t;
 
 static char *
@@ -33,8 +34,8 @@ static void
 ngx_http_auth_file_flush(ngx_open_file_t *file, ngx_log_t *log);
 static char *
 ngx_http_auth_file_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
-static ngx_int_t
-ngx_http_auth_file_read(ngx_http_request_t *r);
+static ngx_array_t *
+ngx_http_auth_file_read(ngx_http_auth_file_loc_conf_t *aflcf, ngx_log_t *log);
 
 static ngx_command_t  ngx_http_auth_file_module_commands[] = {
 
@@ -78,6 +79,7 @@ ngx_module_t ngx_http_auth_file_module = {
     NGX_MODULE_V1_PADDING
 };
 
+static ngx_int_t reopen = 0;
 
 static char *
 ngx_http_auth_file(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
@@ -91,9 +93,13 @@ ngx_http_auth_file(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
     if (aflcf->file == NULL) {
         return NGX_CONF_ERROR;
     }
-    dd("file %*s", (int)aflcf->file->name.len, aflcf->file->name.data);
     // workaround to hook when reopen file
     aflcf->file->flush = ngx_http_auth_file_flush;
+    aflcf->file->data = cf->pool;
+    aflcf->passwords = ngx_http_auth_file_read(aflcf, cf->log);
+    if (aflcf->passwords == NULL) {
+        return NGX_CONF_ERROR;
+    }
      
     return NGX_CONF_OK;
 }
@@ -110,6 +116,7 @@ ngx_http_auth_file_create_loc_conf(ngx_conf_t *cf) {
     /*
      * set by ngx_pcalloc():
      * conf->file = NULL
+     * conf->passwords = NULL
      */
 
     return conf;
@@ -123,6 +130,9 @@ ngx_http_auth_file_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
     if (conf->file == NULL) {
         conf->file = prev->file;
+    }
+    if (conf->passwords == NULL) {
+        conf->passwords = prev->passwords;
     }
 
     return NGX_CONF_OK;
@@ -143,30 +153,29 @@ ngx_http_auth_file_post_conf(ngx_conf_t *cf) {
     return NGX_OK;
 }
 
-static ngx_int_t
-ngx_http_auth_file_read(ngx_http_request_t *r) {
-        u_char                          *p, *last, *end;
+static ngx_array_t *
+ngx_http_auth_file_read(ngx_http_auth_file_loc_conf_t *aflcf, ngx_log_t *log) {
+    u_char                          *p, *last, *end;
     size_t                           len;
-    ngx_fd_t             fd;
+    ngx_fd_t                         fd;
     u_char                           buf[NGX_AUTH_FILE_BUFFER_SIZE];
     ssize_t                          n;
-    ngx_http_auth_file_loc_conf_t   *aflcf;
-    ngx_array_t *passwords;
-    ngx_str_t *pwd;
+    ngx_array_t                     *passwords;
+    ngx_str_t                       *pwd;
+    ngx_pool_t                      *pool;
     
-    aflcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_file_module);
-    dd("file %u", (int)ngx_http_auth_file_module.ctx_index);
+    pool = aflcf->file->data;
     
-    passwords = ngx_array_create(r->pool, 4, sizeof(ngx_str_t));
+    passwords = ngx_array_create(pool, 4, sizeof(ngx_str_t));
     if (passwords == NULL) {
-        return NGX_ERROR;
+        return NULL;
     }
     
     fd = ngx_open_file(aflcf->file->name.data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
     if (fd == NGX_INVALID_FILE) {
-        ngx_log_error(NGX_LOG_EMERG, r->connection->log, ngx_errno,
+        ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
                            ngx_open_file_n " \"%V\" failed", &aflcf->file->name);
-        return NGX_ERROR;
+        return NULL;
     }
      
     len = 0;
@@ -175,7 +184,8 @@ ngx_http_auth_file_read(ngx_http_request_t *r) {
     do {
         n = ngx_read_fd(fd, last, NGX_AUTH_FILE_BUFFER_SIZE - len);
         if (n == -1) {
-            dd(ngx_read_fd_n " \"%*s\" failed", (int)aflcf->file->name.len, aflcf->file->name.data);
+            ngx_log_error(NGX_LOG_ERR, log, 0,
+                ngx_read_fd_n " \"%*s\" failed", (int)aflcf->file->name.len, aflcf->file->name.data);
             goto cleanup;
         }
 
@@ -208,7 +218,7 @@ ngx_http_auth_file_read(ngx_http_request_t *r) {
                 }
 
                 pwd->len = len;
-                pwd->data = ngx_pnalloc(r->pool, len);
+                pwd->data = ngx_pnalloc(pool, len);
 
                 if (pwd->data == NULL) {
                     passwords->nelts--;
@@ -216,6 +226,7 @@ ngx_http_auth_file_read(ngx_http_request_t *r) {
                     goto cleanup;
                 }
 
+                dd("read line %.*s", (int)len, p);
                 ngx_memcpy(pwd->data, p, len);
             }
 
@@ -225,7 +236,7 @@ ngx_http_auth_file_read(ngx_http_request_t *r) {
         len = end - p;
 
         if (len == NGX_AUTH_FILE_BUFFER_SIZE) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+            ngx_log_error(NGX_LOG_ERR, log, 0,
                                "too long line in \"%V\"", &aflcf->file->name);
             goto cleanup;
         }
@@ -238,26 +249,52 @@ ngx_http_auth_file_read(ngx_http_request_t *r) {
 cleanup:
 
     if (ngx_close_file(fd) == NGX_FILE_ERROR) {
-        ngx_conf_log_error(NGX_LOG_ALERT, r->connection->log, ngx_errno,
+        ngx_log_error(NGX_LOG_ALERT, log, ngx_errno,
                            ngx_close_file_n " \"%V\" failed", &aflcf->file->name);
     }
 
     ngx_memzero(buf, NGX_AUTH_FILE_BUFFER_SIZE);
     
-    return NGX_OK;
+    return passwords;
 }
 
 static ngx_int_t
 ngx_http_auth_file_handler(ngx_http_request_t *r) {
+    ngx_str_t                       *pwds;
+    ngx_uint_t                       i;
     ngx_http_auth_file_loc_conf_t   *aflcf;
     
     aflcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_file_module);
-    ngx_http_auth_file_read(r);
+
+    if (reopen) {
+        reopen = 0;
+        ngx_array_destroy(aflcf->passwords); 
+        aflcf->passwords = ngx_http_auth_file_read(aflcf, r->connection->log);    
+        if (aflcf->passwords == NULL) {
+            return NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+    }
+
+    if (r->headers_in.authorization == NULL) {
+        return NGX_HTTP_UNAUTHORIZED;
+    }
     
-    return NGX_OK;
+    pwds = aflcf->passwords->elts;
+    for (i = 0; i < aflcf->passwords->nelts; i++) {
+        dd("compare %.*s", (int)pwds[i].len, pwds[i].data);
+        if (r->headers_in.authorization->value.len == pwds[i].len 
+        && ngx_strncmp(r->headers_in.authorization->value.data, pwds[i].data, 
+            r->headers_in.authorization->value.len) == 0)
+        {
+            return NGX_OK;
+        }
+    }   
+    
+    return NGX_HTTP_UNAUTHORIZED;
 }
 
 static void
 ngx_http_auth_file_flush(ngx_open_file_t *file, ngx_log_t *log) {
     dd("reopen the file %*s", (int)file->name.len, file->name.data);
+    reopen = 1;
 }
