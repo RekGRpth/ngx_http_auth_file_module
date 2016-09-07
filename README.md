@@ -1,6 +1,6 @@
 # ngx_http_auth_file_module
 
-It amis to provide the power of authenticate for nginx. For example, it can work together with these module such as [ngx_http_barcode](https://github.com/x-v8/ngx_http_barcode)、 [ngx_http_qrcode_module](https://github.com/x-v8/ngx_http_qrcode_module) and so on. By the way, it can change auth file on the fly without reload nginx.
+It amis to provide the power of authenticate for nginx. For example, it can work together with these module such as [ngx_http_barcode](https://github.com/x-v8/ngx_http_barcode)、 [ngx_http_qrcode_module](https://github.com/x-v8/ngx_http_qrcode_module)、any http module which work on nginx content phase and so on. By the way, it can change auth file on the fly without reload nginx.
 
 Example:
 ````
